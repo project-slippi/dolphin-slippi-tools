@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log"
 	"os"
 )
@@ -20,10 +21,28 @@ func main() {
 			false,
 			"Does a full update instead of just replacing a few files.",
 		)
+		skipUpdaterUpdatePtr := buildFlags.Bool(
+			"skip-updater",
+			false,
+			"If not a full update, this will likely be false first which will update the updater and "+
+				"then re-trigger the new updater in order to update the app.",
+		)
+		shouldLaunchPtr := buildFlags.Bool(
+			"launch",
+			false,
+			"If true, will launch Dolphin after update.",
+		)
+		isoPathPtr := buildFlags.String(
+			"iso",
+			"",
+			"ISO path to launch when shouldLaunch is true.",
+		)
 		buildFlags.Parse(os.Args[2:])
 
-		execAppUpdate(*isFullUpdatePtr)
+		execAppUpdate(*isFullUpdatePtr, *skipUpdaterUpdatePtr, *shouldLaunchPtr, *isoPathPtr)
 	case "user-update":
 		execUserUpdate()
+	default:
+		fmt.Println("Command not valid")
 	}
 }

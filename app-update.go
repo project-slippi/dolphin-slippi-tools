@@ -2,13 +2,18 @@ package main
 
 import (
 	"archive/zip"
+	"bufio"
 	"context"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/machinebox/graphql"
 )
@@ -24,34 +29,113 @@ type dolphinVersion struct {
 	Type       string `json:"type"`
 }
 
-func execAppUpdate(isFull bool) {
+func execAppUpdate(isFull, skipUpdaterUpdate, shouldLaunch bool, isoPath string) {
+	defer func() {
+		if r := recover(); r != nil {
+			reader := bufio.NewReader(os.Stdin)
+			fmt.Print("Press enter key to exit...")
+			reader.ReadString('\n')
+		}
+	}()
+
+	// Get executable path
+	ex, err := os.Executable()
+	if err != nil {
+		log.Panic(err)
+	}
+	exPath := filepath.Dir(ex)
+
+	oldSlippiToolsPath := filepath.Join(exPath, "old-dolphin-slippi-tools.exe")
+
+	// If we are doing a full update or if we are done updating the updater, wait for Dolphin to close
+	if isFull || skipUpdaterUpdate {
+		waitForDolphinClose()
+	}
+
 	latest := getLatestVersion()
 	dir, err := ioutil.TempDir("", "dolphin-update")
 	if err != nil {
-		log.Fatal(err)
+		log.Panic(err)
 	}
 	defer os.RemoveAll(dir)
 
 	zipFilePath := filepath.Join(dir, "dolphin.zip")
 	err = downloadFile(zipFilePath, latest.URL)
 	if err != nil {
-		log.Fatal(err)
+		log.Panic(err)
 	}
 
-	// Get executable path
-	ex, err := os.Executable()
-	if err != nil {
-		log.Fatal(err)
-	}
-	exPath := filepath.Dir(ex)
+	if !isFull && !skipUpdaterUpdate {
+		fmt.Println("Preparing to update app...")
 
-	err = extractFiles(exPath, zipFilePath, isFull)
-	if err != nil {
-		log.Fatal(err)
+		slippiToolsPath := filepath.Join(exPath, "dolphin-slippi-tools.exe")
+		// If we get here, we need to extract the updater. Start by renaming the current updater
+		err = os.Rename(slippiToolsPath, oldSlippiToolsPath)
+		if err != nil {
+			log.Panicf("Failed to rename slippi tools. %s", err.Error())
+		}
+
+		// Now extract the updater
+		err = extractFiles(exPath, zipFilePath, updaterUpdateGen)
+		if err != nil {
+			log.Panic(err)
+		}
+
+		// Launch the new updater
+		launchArg := fmt.Sprintf("-launch=%t", shouldLaunch)
+		cmd := exec.Command(slippiToolsPath, "app-update", "-skip-updater", launchArg, "-iso", isoPath)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stdout
+		err = cmd.Start()
+		if err != nil {
+			log.Panicf("Failed to start app-update with new updater. %s", err.Error())
+		}
+	} else {
+		// Delete old-dolphin-slippi-tools.exe if it exists. Deleting here because we should have waited
+		// for Dolphin to close which means the previous updater should no longer be running
+		os.RemoveAll(oldSlippiToolsPath)
+
+		// Prepare to extract files
+		updateGen := partialUpdateGen
+		if isFull {
+			updateGen = fullUpdateGen
+		}
+
+		err = extractFiles(exPath, zipFilePath, updateGen)
+		if err != nil {
+			log.Panic(err)
+		}
+
+		if shouldLaunch {
+			// Launch Dolphin
+			cmd := exec.Command(filepath.Join(exPath, "Dolphin.exe"), "-e", isoPath)
+			cmd.Start()
+			if err != nil {
+				log.Panicf("Failed to start Dolphin. %s", err.Error())
+			}
+		}
 	}
 }
 
-func extractFiles(target, source string, isFull bool) error {
+func waitForDolphinClose() {
+	// TODO: Look for specific dolphin process?
+
+	fmt.Println("Waiting for dolphin to close...")
+	for {
+		cmd, _ := exec.Command("TASKLIST", "/FI", "IMAGENAME eq Dolphin.exe").Output()
+		output := string(cmd[:])
+		splitOutp := strings.Split(output, "\n")
+		if len(splitOutp) > 3 {
+			time.Sleep(500 * time.Millisecond)
+			//fmt.Println("Process is running...")
+			continue
+		}
+
+		// If we get here, process is gone
+		break
+	}
+}
+func extractFiles(target, source string, genTargetFile func(string) string) error {
 	reader, err := zip.OpenReader(source)
 	if err != nil {
 		return err
@@ -85,14 +169,13 @@ func extractFiles(target, source string, isFull bool) error {
 			continue
 		}
 
-		// Check if this file should be extracted
-		shouldExtract := shouldExtractFile(relPath, isFull)
-		if !shouldExtract {
+		targetRelPath := genTargetFile(relPath)
+		if targetRelPath == "" {
 			continue
 		}
 
 		// Generate target path
-		path := filepath.Join(target, relPath)
+		path := filepath.Join(target, targetRelPath)
 
 		if file.FileInfo().IsDir() {
 			os.MkdirAll(path, file.Mode())
@@ -114,43 +197,53 @@ func extractFiles(target, source string, isFull bool) error {
 		if _, err := io.Copy(targetFile, fileReader); err != nil {
 			return err
 		}
+
+		log.Printf("Finished copying file: %s\n", path)
 	}
 
 	return nil
 }
 
-func shouldExtractFile(path string, isFull bool) bool {
-	if isFull {
-		return true
+func fullUpdateGen(path string) string {
+	return path
+}
+
+func updaterUpdateGen(path string) string {
+	if path == "dolphin-slippi-tools.exe" {
+		return path
 	}
 
-	path = filepath.ToSlash(path)
+	return ""
+}
+
+func partialUpdateGen(path string) string {
+	slashPath := filepath.ToSlash(path)
 
 	// TODO: This really should do something better. This method does not deal with deleted files,
 	// TODO: renamed files, different file modifications per-version, etc.
 
 	// Check if Dolphin.exe
-	if path == "Dolphin.exe" {
-		return true
+	if slashPath == "Dolphin.exe" {
+		return path
 	}
 
 	// Check if game file
 	gameFilesPattern := "Sys/GameFiles/GALE01/*"
-	gameFilesMatch, err := filepath.Match(gameFilesPattern, path)
+	gameFilesMatch, err := filepath.Match(gameFilesPattern, slashPath)
 	if err != nil {
-		return false
+		return ""
 	}
 
 	if gameFilesMatch {
-		return true
+		return path
 	}
 
 	// Check if code file
-	if path == "Sys/GameSettings/GALE01r2.ini" || path == "Sys/GameSettings/GALJ01r2.ini" {
-		return true
+	if slashPath == "Sys/GameSettings/GALE01r2.ini" || slashPath == "Sys/GameSettings/GALJ01r2.ini" {
+		return path
 	}
 
-	return false
+	return ""
 }
 
 func getLatestVersion() dolphinVersion {

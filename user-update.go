@@ -28,7 +28,7 @@ func execUserUpdate() {
 	// Get executable path
 	ex, err := os.Executable()
 	if err != nil {
-		log.Fatal(err)
+		log.Panic(err)
 	}
 	exPath := filepath.Dir(ex)
 
