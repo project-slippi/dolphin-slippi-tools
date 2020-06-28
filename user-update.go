@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	"github.com/machinebox/graphql"
 )
@@ -30,9 +31,22 @@ func execUserUpdate() {
 	if err != nil {
 		log.Panic(err)
 	}
-	exPath := filepath.Dir(ex)
 
-	file := parseCurrentFile(exPath)
+	var basePath string
+	switch x := runtime.GOOS; x {
+	case "linux":
+		if os.Getenv("XDG_CONFIG_HOME") == "" {
+			basePath = filepath.Join(os.Getenv("HOME"), ".config/SlippiOnline/Sys")
+		} else {
+			basePath = filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "SlippiOnline/Sys")
+		}
+	case "darwin":
+		log.Panicf("OSX unsupported; failed to find user json file")
+	default:
+		basePath = filepath.Dir(ex)
+	}
+
+	file := parseCurrentFile(basePath)
 	resp := getGqlResponse(file.UID)
 
 	file.ConnectCode = resp.User.ConnectCode
@@ -43,14 +57,14 @@ func execUserUpdate() {
 		log.Panicf("Failed to create json file, got %s", err.Error())
 	}
 
-	err = ioutil.WriteFile(filepath.Join(exPath, "user.json"), contents, 0644)
+	err = ioutil.WriteFile(filepath.Join(basePath, "user.json"), contents, 0644)
 	if err != nil {
 		log.Panicf("Failed to write user json file, got %s", err.Error())
 	}
 }
 
-func parseCurrentFile(exPath string) userFile {
-	f, err := os.Open(filepath.Join(exPath, "user.json"))
+func parseCurrentFile(basePath string) userFile {
+	f, err := os.Open(filepath.Join(basePath, "user.json"))
 	if err != nil {
 		log.Panicf("Could not open user.json file, got %s", err.Error())
 	}
