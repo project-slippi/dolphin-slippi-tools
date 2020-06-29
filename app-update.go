@@ -121,6 +121,7 @@ func waitForDolphinClose() {
 	// TODO: Look for specific dolphin process?
 
 	fmt.Println("Waiting for dolphin to close...")
+	fmt.Printf("You can find release notes at: https://github.com/project-slippi/Ishiiruka/releases \n")
 	for {
 		cmd, _ := exec.Command("TASKLIST", "/FI", "IMAGENAME eq Dolphin.exe").Output()
 		output := string(cmd[:])
