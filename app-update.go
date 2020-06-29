@@ -135,6 +135,7 @@ func waitForDolphinClose() {
 		break
 	}
 }
+
 func extractFiles(target, source string, genTargetFile func(string) string) error {
 	reader, err := zip.OpenReader(source)
 	if err != nil {
@@ -188,13 +189,29 @@ func extractFiles(target, source string, genTargetFile func(string) string) erro
 		}
 		defer fileReader.Close()
 
-		targetFile, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, file.Mode())
-		if err != nil {
-			return err
-		}
-		defer targetFile.Close()
+		start := time.Now()
 
-		if _, err := io.Copy(targetFile, fileReader); err != nil {
+		for time.Now().Sub(start) < (time.Second * 20) {
+			targetFile, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, file.Mode())
+			if err != nil {
+				log.Printf("Failed to open file for write, will try again: %s\n", path)
+				time.Sleep(time.Second)
+				continue
+			}
+			defer targetFile.Close()
+
+			if _, err := io.Copy(targetFile, fileReader); err != nil {
+				log.Printf("Failed to copy file, will try again: %s\n", path)
+				time.Sleep(time.Second)
+				continue
+			}
+
+			// If everything succeeded, break immediately
+			break
+		}
+
+		// Return error if there was one above and we timed out
+		if err != nil {
 			return err
 		}
 
