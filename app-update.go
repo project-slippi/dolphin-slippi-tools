@@ -120,8 +120,8 @@ func execAppUpdate(isFull, skipUpdaterUpdate, shouldLaunch bool, isoPath string)
 func waitForDolphinClose() {
 	// TODO: Look for specific dolphin process?
 
-	fmt.Println("Waiting for dolphin to close...")
-	fmt.Printf("You can find release notes at: https://github.com/project-slippi/Ishiiruka/releases \n")
+	fmt.Printf("\nYou can find release notes at: https://github.com/project-slippi/Ishiiruka/releases \n\n")
+	fmt.Println("Waiting for Dolphin to close. Ensure ALL Dolphin instances are closed. Can take a few moments after they are all closed...")
 	for {
 		cmd, _ := exec.Command("TASKLIST", "/FI", "IMAGENAME eq Dolphin.exe").Output()
 		output := string(cmd[:])
