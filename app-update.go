@@ -261,6 +261,12 @@ func partialUpdateGen(path string) string {
 		return path
 	}
 
+	// Check if code selection file
+	// TODO: Make it so that people's optional selections are preserved
+	if slashPath == "User/GameSettings/GALE01.ini" || slashPath == "User/GameSettings/GALJ01r2.ini" {
+		return path
+	}
+
 	return ""
 }
 
