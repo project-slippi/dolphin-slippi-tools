@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 )
 
 func main() {
@@ -39,10 +40,19 @@ func main() {
 		)
 		buildFlags.Parse(os.Args[2:])
 
-		execAppUpdate(*isFullUpdatePtr, *skipUpdaterUpdatePtr, *shouldLaunchPtr, *isoPathPtr)
+		err := execAppUpdate(*isFullUpdatePtr, *skipUpdaterUpdatePtr, *shouldLaunchPtr, *isoPathPtr)
+
+		if err != nil {
+			fmt.Println("")
+			fmt.Println("Error encountered. For help updating, screenshot this and head to the Slippi Discord")
+			for {
+				time.Sleep(1 * time.Second)
+			}
+		}
 	case "user-update":
 		execUserUpdate()
 	default:
 		fmt.Println("Command not valid")
 	}
+
 }

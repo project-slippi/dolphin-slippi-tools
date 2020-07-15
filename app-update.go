@@ -2,8 +2,8 @@ package main
 
 import (
 	"archive/zip"
-	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -29,12 +29,10 @@ type dolphinVersion struct {
 	Type       string `json:"type"`
 }
 
-func execAppUpdate(isFull, skipUpdaterUpdate, shouldLaunch bool, isoPath string) {
+func execAppUpdate(isFull, skipUpdaterUpdate, shouldLaunch bool, isoPath string) (returnErr error) {
 	defer func() {
 		if r := recover(); r != nil {
-			reader := bufio.NewReader(os.Stdin)
-			fmt.Print("Press enter key to exit...")
-			reader.ReadString('\n')
+			returnErr = errors.New("Error encountered updating app")
 		}
 	}()
 
@@ -106,6 +104,9 @@ func execAppUpdate(isFull, skipUpdaterUpdate, shouldLaunch bool, isoPath string)
 			log.Panic(err)
 		}
 
+		// Install vcr if the user doesn't already have it installed
+		installVcr(dir)
+
 		if shouldLaunch {
 			// Launch Dolphin
 			cmd := exec.Command(filepath.Join(exPath, "Dolphin.exe"), "-e", isoPath)
@@ -115,6 +116,8 @@ func execAppUpdate(isFull, skipUpdaterUpdate, shouldLaunch bool, isoPath string)
 			}
 		}
 	}
+
+	return nil
 }
 
 func waitForDolphinClose() {
@@ -245,6 +248,11 @@ func partialUpdateGen(path string) string {
 		return path
 	}
 
+	// Check fix VCRuntime file
+	if slashPath == "FIX-VCRUNTIME140-ERROR.txt" {
+		return path
+	}
+
 	// Check if game file
 	gameFilesPattern := "Sys/GameFiles/GALE01/*"
 	gameFilesMatch, err := filepath.Match(gameFilesPattern, slashPath)
@@ -295,6 +303,30 @@ func getLatestVersion() dolphinVersion {
 	}
 
 	return resp.DolphinVersions[0]
+}
+
+func installVcr(tempDir string) {
+	log.Printf("Checking new VCRuntime installation...")
+
+	vcrFilePath := filepath.Join(tempDir, "vcr.exe")
+	err := downloadFile(vcrFilePath, "https://aka.ms/vs/16/release/vc_redist.x64.exe")
+	if err != nil {
+		log.Panic(err)
+	}
+
+	cmd := exec.Command(vcrFilePath, "/install", "/passive", "/norestart")
+	err = cmd.Run()
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stdout
+	if err != nil {
+		if err.Error() != "exit status 1638" {
+			log.Panicf("Failed to install VCRuntime. %s", err.Error())
+		} else {
+			log.Printf("VCR already installed")
+		}
+	} else {
+		log.Printf("VCR install successful")
+	}
 }
 
 // DownloadFile will download a url to a local file. It's efficient because it will
