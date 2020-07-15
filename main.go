@@ -44,7 +44,7 @@ func main() {
 
 		if err != nil {
 			fmt.Println("")
-			fmt.Println("Error encountered. For help updating, screenshot this and head to the Slippi Discord")
+			fmt.Println("Something went wrong. Read above messages to see if there's additional help info. If Dolphin isn't working, screenshot this and head to the Slippi Discord")
 			for {
 				time.Sleep(1 * time.Second)
 			}

@@ -319,10 +319,12 @@ func installVcr(tempDir string) {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stdout
 	if err != nil {
-		if err.Error() != "exit status 1638" {
-			log.Panicf("Failed to install VCRuntime. %s", err.Error())
-		} else {
+		if err.Error() == "exit status 1638" {
 			log.Printf("VCR already installed")
+		} else if err.Error() == "exit status 3010" {
+			log.Panicf("Runtime was installed successfully but you may need to restart your computer")
+		} else {
+			log.Panicf("Failed to install VCRuntime. %s", err.Error())
 		}
 	} else {
 		log.Printf("VCR install successful")
