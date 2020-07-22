@@ -38,9 +38,14 @@ func main() {
 			"",
 			"ISO path to launch when shouldLaunch is true.",
 		)
+		versionPtr := buildFlags.String(
+			"version",
+			"",
+			"The current dolphin version we are updating.",
+		)
 		buildFlags.Parse(os.Args[2:])
 
-		err := execAppUpdate(*isFullUpdatePtr, *skipUpdaterUpdatePtr, *shouldLaunchPtr, *isoPathPtr)
+		err := execAppUpdate(*isFullUpdatePtr, *skipUpdaterUpdatePtr, *shouldLaunchPtr, *isoPathPtr, *versionPtr)
 
 		if err != nil {
 			fmt.Println("")

@@ -29,7 +29,7 @@ type dolphinVersion struct {
 	Type       string `json:"type"`
 }
 
-func execAppUpdate(isFull, skipUpdaterUpdate, shouldLaunch bool, isoPath string) (returnErr error) {
+func execAppUpdate(isFull, skipUpdaterUpdate, shouldLaunch bool, isoPath, prevVersion string) (returnErr error) {
 	defer func() {
 		if r := recover(); r != nil {
 			returnErr = errors.New("Error encountered updating app")
@@ -81,7 +81,7 @@ func execAppUpdate(isFull, skipUpdaterUpdate, shouldLaunch bool, isoPath string)
 
 		// Launch the new updater
 		launchArg := fmt.Sprintf("-launch=%t", shouldLaunch)
-		cmd := exec.Command(slippiToolsPath, "app-update", "-skip-updater", launchArg, "-iso", isoPath)
+		cmd := exec.Command(slippiToolsPath, "app-update", "-skip-updater", launchArg, "-iso", isoPath, "-version", prevVersion)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stdout
 		err = cmd.Start()
@@ -100,6 +100,12 @@ func execAppUpdate(isFull, skipUpdaterUpdate, shouldLaunch bool, isoPath string)
 		}
 
 		err = extractFiles(exPath, zipFilePath, updateGen)
+		if err != nil {
+			log.Panic(err)
+		}
+
+		// Now extract the exe (do this last such that we can avoid a partial update)
+		err = extractFiles(exPath, zipFilePath, exeUpdateGen)
 		if err != nil {
 			log.Panic(err)
 		}
@@ -226,6 +232,13 @@ func extractFiles(target, source string, genTargetFile func(string) string) erro
 }
 
 func fullUpdateGen(path string) string {
+	slashPath := filepath.ToSlash(path)
+
+	// Check if Dolphin.exe
+	if slashPath == "Dolphin.exe" {
+		return ""
+	}
+
 	return path
 }
 
@@ -237,16 +250,22 @@ func updaterUpdateGen(path string) string {
 	return ""
 }
 
-func partialUpdateGen(path string) string {
+func exeUpdateGen(path string) string {
 	slashPath := filepath.ToSlash(path)
-
-	// TODO: This really should do something better. This method does not deal with deleted files,
-	// TODO: renamed files, different file modifications per-version, etc.
 
 	// Check if Dolphin.exe
 	if slashPath == "Dolphin.exe" {
 		return path
 	}
+
+	return ""
+}
+
+func partialUpdateGen(path string) string {
+	slashPath := filepath.ToSlash(path)
+
+	// TODO: This really should do something better. This method does not deal with deleted files,
+	// TODO: renamed files, different file modifications per-version, etc.
 
 	// Check fix VCRuntime file
 	if slashPath == "FIX-VCRUNTIME140-ERROR.txt" {
@@ -322,7 +341,7 @@ func installVcr(tempDir string) {
 		if err.Error() == "exit status 1638" {
 			log.Printf("VCR already installed")
 		} else if err.Error() == "exit status 3010" {
-			log.Panicf("Runtime was installed successfully but you may need to restart your computer")
+			log.Printf("VCR was installed successfully. If you have issues you may need to restart your computer")
 		} else {
 			log.Panicf("Failed to install VCRuntime. %s", err.Error())
 		}
