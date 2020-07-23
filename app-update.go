@@ -15,7 +15,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gonutz/w32"
 	"github.com/machinebox/graphql"
+	"golang.org/x/sys/windows/registry"
 )
 
 type gqlResponse struct {
@@ -64,7 +66,11 @@ func execAppUpdate(isFull, skipUpdaterUpdate, shouldLaunch bool, isoPath, prevVe
 	}
 
 	if !isFull && !skipUpdaterUpdate {
-		fmt.Println("Preparing to update app...")
+		prevVersionDisplay := prevVersion
+		if prevVersionDisplay == "" {
+			prevVersionDisplay = "unknown"
+		}
+		fmt.Printf("Preparing to update app from %s to %s...\n", prevVersionDisplay, latest.Version)
 
 		slippiToolsPath := filepath.Join(exPath, "dolphin-slippi-tools.exe")
 		// If we get here, we need to extract the updater. Start by renaming the current updater
@@ -93,12 +99,16 @@ func execAppUpdate(isFull, skipUpdaterUpdate, shouldLaunch bool, isoPath, prevVe
 		// for Dolphin to close which means the previous updater should no longer be running
 		os.RemoveAll(oldSlippiToolsPath)
 
+		// After 2.2.0 we stopped supporting non-melee games by default, this will delete all old inis
+		applyMeleeOnlyChanges(prevVersion, exPath)
+
 		// Prepare to extract files
 		updateGen := partialUpdateGen
 		if isFull {
 			updateGen = fullUpdateGen
 		}
 
+		// Extract all non-exe files used for update
 		err = extractFiles(exPath, zipFilePath, updateGen)
 		if err != nil {
 			log.Panic(err)
@@ -283,14 +293,14 @@ func partialUpdateGen(path string) string {
 		return path
 	}
 
-	// Check if code file
-	if slashPath == "Sys/GameSettings/GALE01r2.ini" || slashPath == "Sys/GameSettings/GALJ01r2.ini" {
-		return path
+	// Check if game code file
+	gameCodesPattern := "Sys/GameSettings/*"
+	gameCodesMatch, err := filepath.Match(gameCodesPattern, slashPath)
+	if err != nil {
+		return ""
 	}
 
-	// Check if code selection file
-	// TODO: Make it so that people's optional selections are preserved
-	if slashPath == "User/GameSettings/GALE01.ini" || slashPath == "User/GameSettings/GALJ01r2.ini" {
+	if gameCodesMatch {
 		return path
 	}
 
@@ -324,6 +334,63 @@ func getLatestVersion() dolphinVersion {
 	return resp.DolphinVersions[0]
 }
 
+func getCurrentVcrVersion() string {
+	k, err := registry.OpenKey(registry.LOCAL_MACHINE, `SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\X64`, registry.QUERY_VALUE)
+	if err != nil {
+		return ""
+	}
+	defer k.Close()
+
+	major, _, err := k.GetIntegerValue("Major")
+	if err != nil {
+		return ""
+	}
+
+	minor, _, err := k.GetIntegerValue("Minor")
+	if err != nil {
+		return ""
+	}
+
+	bld, _, err := k.GetIntegerValue("Bld")
+	if err != nil {
+		return ""
+	}
+
+	rbld, _, err := k.GetIntegerValue("Rbld")
+	if err != nil {
+		return ""
+	}
+
+	return fmt.Sprintf("%d.%d.%d.%d", major, minor, bld, rbld)
+}
+
+func getInstallerVcrVersion(installerPath string) string {
+	size := w32.GetFileVersionInfoSize(installerPath)
+	if size <= 0 {
+		log.Panicf("Couldn't load latest VCR version size")
+	}
+
+	info := make([]byte, size)
+	ok := w32.GetFileVersionInfo(installerPath, info)
+	if !ok {
+		log.Panicf("Couldn't load latest VCR version")
+	}
+
+	fixed, ok := w32.VerQueryValueRoot(info)
+	if !ok {
+		log.Panicf("Couldn't load latest VCR version root")
+	}
+
+	version := fixed.FileVersion()
+	return fmt.Sprintf(
+		"%d.%d.%d.%d",
+		version&0xFFFF000000000000>>48,
+		version&0x0000FFFF00000000>>32,
+		version&0x00000000FFFF0000>>16,
+		version&0x000000000000FFFF>>0,
+	)
+}
+
 func installVcr(tempDir string) {
 	log.Printf("Checking new VCRuntime installation...")
 
@@ -331,6 +398,15 @@ func installVcr(tempDir string) {
 	err := downloadFile(vcrFilePath, "https://aka.ms/vs/16/release/vc_redist.x64.exe")
 	if err != nil {
 		log.Panic(err)
+	}
+
+	// First let's check if the latest version of VCR is already installed
+	currentVersion := getCurrentVcrVersion()
+	installerVersion := getInstallerVcrVersion(vcrFilePath)
+	log.Printf("Current version: %s, Latest version: %s\n", currentVersion, installerVersion)
+	if currentVersion == installerVersion {
+		log.Printf("Latest VCR already installed")
+		return
 	}
 
 	cmd := exec.Command(vcrFilePath, "/install", "/passive", "/norestart")
@@ -371,4 +447,27 @@ func downloadFile(filepath string, url string) error {
 	// Write the body to file
 	_, err = io.Copy(out, resp.Body)
 	return err
+}
+
+func applyMeleeOnlyChanges(prevVersion, exPath string) {
+	if prevVersion != "" {
+		// Before version 2.2.1, we didn't include previous version, so if this isn't empty,
+		// we shouldn't be deleting these files
+		return
+	}
+
+	gameSettingsPath := filepath.Join(exPath, "Sys", "GameSettings")
+
+	log.Printf("Cleaning up old files...")
+
+	// Attempt to delete all files inside the Sys/GameSettings folder
+	dir, err := ioutil.ReadDir(gameSettingsPath)
+	for _, d := range dir {
+		err = os.RemoveAll(filepath.Join(gameSettingsPath, d.Name()))
+		if err != nil {
+			log.Panic(err)
+		}
+	}
+
+	log.Printf("Cleanup complete")
 }
