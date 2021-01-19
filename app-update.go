@@ -120,12 +120,16 @@ func execAppUpdate(isFull, skipUpdaterUpdate, shouldLaunch bool, isoPath, prevVe
 			log.Panic(err)
 		}
 
+		// After 2.2.4 we change the name of the exe to "Slippi Dolphin.exe", so let's delete the old
+		oldExePath := filepath.Join(exPath, "Dolphin.exe")
+		os.RemoveAll(oldExePath)
+
 		// Install vcr if the user doesn't already have it installed
 		installVcr(dir)
 
 		if shouldLaunch {
 			// Launch Dolphin
-			cmd := exec.Command(filepath.Join(exPath, "Dolphin.exe"), "-e", isoPath)
+			cmd := exec.Command(filepath.Join(exPath, "Slippi Dolphin.exe"), "-e", isoPath)
 			cmd.Start()
 			if err != nil {
 				log.Panicf("Failed to start Dolphin. %s", err.Error())
@@ -151,6 +155,15 @@ func waitForDolphinClose() {
 			continue
 		}
 
+		cmd, _ = exec.Command("TASKLIST", "/FI", "IMAGENAME eq Slippi Dolphin.exe").Output()
+		output = string(cmd[:])
+		splitOutp = strings.Split(output, "\n")
+		if len(splitOutp) > 3 {
+			time.Sleep(500 * time.Millisecond)
+			//fmt.Println("Process is running...")
+			continue
+		}
+
 		// If we get here, process is gone
 		break
 	}
@@ -168,8 +181,8 @@ func extractFiles(target, source string, genTargetFile func(string) string) erro
 	for _, file := range reader.File {
 		filePathName := file.Name
 		baseFile := filepath.Base(filePathName)
-		// TODO: Handle other OS's
-		if baseFile == "Dolphin.exe" {
+
+		if baseFile == "Dolphin.exe" || baseFile == "Slippi Dolphin.exe" {
 			dolphinPath = filepath.Dir(filePathName)
 			break
 		}
@@ -245,7 +258,7 @@ func fullUpdateGen(path string) string {
 	slashPath := filepath.ToSlash(path)
 
 	// Check if Dolphin.exe
-	if slashPath == "Dolphin.exe" {
+	if slashPath == "Dolphin.exe" || slashPath == "Slippi Dolphin.exe" {
 		return ""
 	}
 
@@ -264,7 +277,7 @@ func exeUpdateGen(path string) string {
 	slashPath := filepath.ToSlash(path)
 
 	// Check if Dolphin.exe
-	if slashPath == "Dolphin.exe" {
+	if slashPath == "Dolphin.exe" || slashPath == "Slippi Dolphin.exe" {
 		return path
 	}
 
