@@ -102,14 +102,14 @@ func execAppUpdate(isFull, skipUpdaterUpdate, shouldLaunch bool, isoPath, prevVe
 		// After 2.2.0 we stopped supporting non-melee games by default, this will delete all old inis
 		applyMeleeOnlyChanges(prevVersion, exPath)
 
-		// Prepare to extract files
-		updateGen := partialUpdateGen
-		if isFull {
-			updateGen = fullUpdateGen
+		// Delete previous install
+		err := deletePrevious(exPath)
+		if err != nil {
+			log.Panicf("Failed to delete old install. %s\n", err.Error())
 		}
 
 		// Extract all non-exe files used for update
-		err = extractFiles(exPath, zipFilePath, updateGen)
+		err = extractFiles(exPath, zipFilePath, fullUpdateGen)
 		if err != nil {
 			log.Panic(err)
 		}
@@ -120,11 +120,8 @@ func execAppUpdate(isFull, skipUpdaterUpdate, shouldLaunch bool, isoPath, prevVe
 			log.Panic(err)
 		}
 
-		// After 2.2.4 we change the name of the exe to "Slippi Dolphin.exe", so let's delete the old
-		oldExePath := filepath.Join(exPath, "Dolphin.exe")
-		os.RemoveAll(oldExePath)
-
 		// Install vcr if the user doesn't already have it installed
+		// TODO: Consider not updating vcr if there's a new version
 		installVcr(dir)
 
 		if shouldLaunch {
@@ -262,6 +259,10 @@ func fullUpdateGen(path string) string {
 		return ""
 	}
 
+	if slashPath == "dolphin-slippi-tools.exe" {
+		return ""
+	}
+
 	return path
 }
 
@@ -284,40 +285,23 @@ func exeUpdateGen(path string) string {
 	return ""
 }
 
-func partialUpdateGen(path string) string {
-	slashPath := filepath.ToSlash(path)
-
-	// TODO: This really should do something better. This method does not deal with deleted files,
-	// TODO: renamed files, different file modifications per-version, etc.
-
-	// Check fix VCRuntime file
-	if slashPath == "FIX-VCRUNTIME140-ERROR.txt" {
-		return path
-	}
-
-	// Check if game file
-	gameFilesPattern := "Sys/GameFiles/GALE01/*"
-	gameFilesMatch, err := filepath.Match(gameFilesPattern, slashPath)
+func deletePrevious(path string) error {
+	err := os.RemoveAll(filepath.Join(path, "Dolphin.exe"))
 	if err != nil {
-		return ""
+		return err
 	}
 
-	if gameFilesMatch {
-		return path
-	}
-
-	// Check if game code file
-	gameCodesPattern := "Sys/GameSettings/*"
-	gameCodesMatch, err := filepath.Match(gameCodesPattern, slashPath)
+	err = os.RemoveAll(filepath.Join(path, "Slippi Dolphin.exe"))
 	if err != nil {
-		return ""
+		return err
 	}
 
-	if gameCodesMatch {
-		return path
+	err = os.RemoveAll(filepath.Join(path, "Sys"))
+	if err != nil {
+		return err
 	}
 
-	return ""
+	return nil
 }
 
 func getLatestVersion() dolphinVersion {
