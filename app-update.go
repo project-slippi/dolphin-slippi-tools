@@ -52,7 +52,8 @@ func execAppUpdate(isFull, skipUpdaterUpdate, shouldLaunch bool, isoPath, prevVe
 		waitForDolphinClose()
 	}
 
-	latest := getLatestVersion()
+	isBeta := strings.Contains(prevVersion, "-beta")
+	latest := getLatestVersion(isBeta)
 	dir, err := ioutil.TempDir("", "dolphin-update")
 	if err != nil {
 		log.Panic(err)
@@ -304,13 +305,13 @@ func deletePrevious(path string) error {
 	return nil
 }
 
-func getLatestVersion() dolphinVersion {
+func getLatestVersion(isBeta bool) dolphinVersion {
 	// TODO: Cache response?
 
 	client := graphql.NewClient("https://slippi-hasura.herokuapp.com/v1/graphql")
 	req := graphql.NewRequest(`
-		query ($type: String!) {
-			dolphinVersions(order_by: {releasedAt: desc}, limit: 1, where: {type: {_eq: $type}}) {
+		query ($types: [String!]!) {
+			dolphinVersions(order_by: {releasedAt: desc}, where: {type: {_in: $types}}, limit: 1) {
 				url
 				version
 				releasedAt
@@ -319,7 +320,11 @@ func getLatestVersion() dolphinVersion {
 		}	
 	`)
 
-	req.Var("type", "ishii")
+	types := []string{"ishii"}
+	if isBeta {
+		types = append(types, "ishii-beta")
+	}
+	req.Var("types", types)
 	ctx := context.Background()
 
 	var resp gqlResponse
