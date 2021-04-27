@@ -15,9 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gonutz/w32"
 	"github.com/machinebox/graphql"
-	"golang.org/x/sys/windows/registry"
 )
 
 type gqlResponse struct {
@@ -120,10 +118,6 @@ func execAppUpdate(isFull, skipUpdaterUpdate, shouldLaunch bool, isoPath, prevVe
 		if err != nil {
 			log.Panic(err)
 		}
-
-		// Install vcr if the user doesn't already have it installed
-		// TODO: Consider not updating vcr if there's a new version
-		installVcr(dir)
 
 		if shouldLaunch {
 			// Launch Dolphin
@@ -334,98 +328,6 @@ func getLatestVersion(isBeta bool) dolphinVersion {
 	}
 
 	return resp.DolphinVersions[0]
-}
-
-func getCurrentVcrVersion() string {
-	k, err := registry.OpenKey(registry.LOCAL_MACHINE, `SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\X64`, registry.QUERY_VALUE)
-	if err != nil {
-		return ""
-	}
-	defer k.Close()
-
-	major, _, err := k.GetIntegerValue("Major")
-	if err != nil {
-		return ""
-	}
-
-	minor, _, err := k.GetIntegerValue("Minor")
-	if err != nil {
-		return ""
-	}
-
-	bld, _, err := k.GetIntegerValue("Bld")
-	if err != nil {
-		return ""
-	}
-
-	rbld, _, err := k.GetIntegerValue("Rbld")
-	if err != nil {
-		return ""
-	}
-
-	return fmt.Sprintf("%d.%d.%d.%d", major, minor, bld, rbld)
-}
-
-func getInstallerVcrVersion(installerPath string) string {
-	size := w32.GetFileVersionInfoSize(installerPath)
-	if size <= 0 {
-		log.Panicf("Couldn't load latest VCR version size")
-	}
-
-	info := make([]byte, size)
-	ok := w32.GetFileVersionInfo(installerPath, info)
-	if !ok {
-		log.Panicf("Couldn't load latest VCR version")
-	}
-
-	fixed, ok := w32.VerQueryValueRoot(info)
-	if !ok {
-		log.Panicf("Couldn't load latest VCR version root")
-	}
-
-	version := fixed.FileVersion()
-	return fmt.Sprintf(
-		"%d.%d.%d.%d",
-		version&0xFFFF000000000000>>48,
-		version&0x0000FFFF00000000>>32,
-		version&0x00000000FFFF0000>>16,
-		version&0x000000000000FFFF>>0,
-	)
-}
-
-func installVcr(tempDir string) {
-	log.Printf("Checking new VCRuntime installation...")
-
-	vcrFilePath := filepath.Join(tempDir, "vcr.exe")
-	err := downloadFile(vcrFilePath, "https://aka.ms/vs/16/release/vc_redist.x64.exe")
-	if err != nil {
-		log.Panic(err)
-	}
-
-	// First let's check if the latest version of VCR is already installed
-	currentVersion := getCurrentVcrVersion()
-	installerVersion := getInstallerVcrVersion(vcrFilePath)
-	log.Printf("Current version: %s, Latest version: %s\n", currentVersion, installerVersion)
-	if currentVersion == installerVersion {
-		log.Printf("Latest VCR already installed")
-		return
-	}
-
-	cmd := exec.Command(vcrFilePath, "/install", "/passive", "/norestart")
-	err = cmd.Run()
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stdout
-	if err != nil {
-		if err.Error() == "exit status 1638" {
-			log.Printf("VCR already installed")
-		} else if err.Error() == "exit status 3010" {
-			log.Printf("VCR was installed successfully. If you have issues you may need to restart your computer")
-		} else {
-			log.Panicf("Failed to install VCRuntime. %s", err.Error())
-		}
-	} else {
-		log.Printf("VCR install successful")
-	}
 }
 
 // DownloadFile will download a url to a local file. It's efficient because it will
