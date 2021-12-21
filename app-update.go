@@ -94,6 +94,10 @@ func execAppUpdate(isFull, skipUpdaterUpdate, shouldLaunch bool, isoPath, prevVe
 			log.Panicf("Failed to start app-update with new updater. %s", err.Error())
 		}
 	} else {
+		fmt.Printf("\n\nIMPORTANT:\nThis updater will soon no longer work. All future updates will be through the Slippi Launcher. We recommend switching at your earliest convenience. You can download it from slippi.gg\n\n")
+		fmt.Printf("Your update will resume shortly, please read warning above...")
+		time.Sleep(5000 * time.Millisecond)
+
 		// Delete old-dolphin-slippi-tools.exe if it exists. Deleting here because we should have waited
 		// for Dolphin to close which means the previous updater should no longer be running
 		os.RemoveAll(oldSlippiToolsPath)
