@@ -19,14 +19,12 @@ import (
 )
 
 type gqlResponse struct {
-	DolphinVersions []dolphinVersion `json:"dolphinVersions"`
+	DolphinVersion dolphinVersion `json:"getLatestDolphin"`
 }
 
 type dolphinVersion struct {
-	URL        string `json:"url"`
-	Version    string `json:"version"`
-	ReleasedAt string `json:"releasedAt"`
-	Type       string `json:"type"`
+	URL     string `json:"windowsDownloadUrl"`
+	Version string `json:"version"`
 }
 
 func execAppUpdate(isFull, skipUpdaterUpdate, shouldLaunch bool, isoPath, prevVersion string) (returnErr error) {
@@ -94,7 +92,7 @@ func execAppUpdate(isFull, skipUpdaterUpdate, shouldLaunch bool, isoPath, prevVe
 			log.Panicf("Failed to start app-update with new updater. %s", err.Error())
 		}
 	} else {
-		fmt.Printf("\n\nIMPORTANT:\nThis updater will soon no longer work. All future updates will be through the Slippi Launcher. We recommend switching at your earliest convenience. You can download it from slippi.gg\n\n")
+		fmt.Printf("\n\nIMPORTANT:\nThis updater will soon no longer work. Future updates will be through the Slippi Launcher. We recommend switching at your earliest convenience. You can download it from slippi.gg\n\n")
 		fmt.Printf("Your update will resume shortly, please read warning above...")
 		time.Sleep(5000 * time.Millisecond)
 
@@ -306,23 +304,17 @@ func deletePrevious(path string) error {
 func getLatestVersion(isBeta bool) dolphinVersion {
 	// TODO: Cache response?
 
-	client := graphql.NewClient("https://slippi-hasura.herokuapp.com/v1/graphql")
+	client := graphql.NewClient("https://gql-gateway-dot-slippi.uc.r.appspot.com/graphql")
 	req := graphql.NewRequest(`
-		query ($types: [String!]!) {
-			dolphinVersions(order_by: {releasedAt: desc}, where: {type: {_in: $types}}, limit: 1) {
-				url
+		query GetLatestDolphin($includeBeta: Boolean) {
+			getLatestDolphin(includeBeta: $includeBeta) {
+				windowsDownloadUrl
 				version
-				releasedAt
-				type
 			}
-		}	
+		}
 	`)
 
-	types := []string{"ishii"}
-	if isBeta {
-		types = append(types, "ishii-beta")
-	}
-	req.Var("types", types)
+	req.Var("includeBeta", isBeta)
 	ctx := context.Background()
 
 	var resp gqlResponse
@@ -331,7 +323,7 @@ func getLatestVersion(isBeta bool) dolphinVersion {
 		log.Printf("Failed to fetch version info from graphql server, got %s", err.Error())
 	}
 
-	return resp.DolphinVersions[0]
+	return resp.DolphinVersion
 }
 
 // DownloadFile will download a url to a local file. It's efficient because it will
